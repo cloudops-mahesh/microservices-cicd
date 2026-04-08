@@ -7,7 +7,7 @@ app = FastAPI(title="User Service", version="1.0.0")
 
 users_db = {
     1: {"id": 1, "name": "Alice", "email": "alice@example.com"},
-    2: {"id": 2, "name": "Bob",   "email": "bob@example.com"},
+    2: {"id": 2, "name": "Bob", "email": "bob@example.com"},
 }
 
 

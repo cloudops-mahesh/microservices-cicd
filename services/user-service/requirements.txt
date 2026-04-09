@@ -3,5 +3,5 @@ uvicorn
 pydantic
 httpx
 pytest
-pytest-covcd 
+pytest-cov
 flake8

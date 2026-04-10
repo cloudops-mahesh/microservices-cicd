@@ -72,14 +72,14 @@ jobs:
             export IMAGE_TAG=latest
 
             # Restart all services
-            docker compose down
-            docker compose up -d
+            docker -compose down
+            docker -compose up -d
 
             # Wait for health checks
             sleep 20
 
             # Verify all containers are running
-            docker compose ps
+            docker -compose ps
 
       - name: Run smoke tests
         uses: appleboy/ssh-action@v1.0.3

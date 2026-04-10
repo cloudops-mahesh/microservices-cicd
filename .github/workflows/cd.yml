@@ -1,0 +1,118 @@
+name: CD Pipeline
+
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types:
+      - completed
+    branches: [main]
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
+
+jobs:
+
+  # ─────────────────────────────────────────────
+  # Job 1: Deploy to EC2
+  # Only runs if CI Pipeline succeeded
+  # ─────────────────────────────────────────────
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get image tag from CI
+        id: vars
+        run: echo "IMAGE_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 120s
+          script: |
+            # Authenticate Docker to ECR
+            aws ecr get-login-password --region ap-south-1 \
+              | docker login --username AWS \
+                             --password-stdin ${{ env.ECR_REGISTRY }}
+
+            # Navigate to project
+            cd /home/ec2-user/microservices-cicd
+
+            # Pull latest code
+            git pull origin main
+
+            # Set environment variables
+            export ECR_REGISTRY=${{ env.ECR_REGISTRY }}
+            export IMAGE_TAG=${{ steps.vars.outputs.IMAGE_TAG }}
+
+            # Pull latest images from ECR
+            docker pull $ECR_REGISTRY/api-gateway:latest
+            docker pull $ECR_REGISTRY/user-service:latest
+            docker pull $ECR_REGISTRY/order-service:latest
+            docker pull $ECR_REGISTRY/frontend:latest
+
+            # Update docker-compose to use ECR images
+            export ECR_REGISTRY=$ECR_REGISTRY
+            export IMAGE_TAG=latest
+
+            # Restart all services
+            docker compose down
+            docker compose up -d
+
+            # Wait for health checks
+            sleep 20
+
+            # Verify all containers are running
+            docker compose ps
+
+      - name: Run smoke tests
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "Running smoke tests..."
+            sleep 5
+
+            # Test gateway health
+            curl -f http://localhost/health || exit 1
+            echo "Gateway: OK"
+
+            # Test user service
+            curl -f http://localhost/api/users || exit 1
+            echo "Users API: OK"
+
+            # Test order service
+            curl -f http://localhost/api/orders || exit 1
+            echo "Orders API: OK"
+
+            echo "All smoke tests passed!"
+
+      - name: Notify success
+        if: success()
+        run: |
+          echo "Deployment successful!"
+          echo "App is live at: http://${{ secrets.EC2_HOST }}"
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "Deployment FAILED!"
+          echo "Check logs at: https://github.com/${{ github.repository }}/actions"

@@ -13,10 +13,6 @@ env:
 
 jobs:
 
-  # ─────────────────────────────────────────────
-  # Job 1: Deploy to EC2
-  # Only runs if CI Pipeline succeeded
-  # ─────────────────────────────────────────────
   deploy:
     name: Deploy to EC2
     runs-on: ubuntu-latest
@@ -34,10 +30,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get image tag from CI
-        id: vars
-        run: echo "IMAGE_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -47,17 +39,13 @@ jobs:
           timeout: 60s
           command_timeout: 300s
           script: |
-           cd /home/ec2-user/microservices-cicd
-
-            # Pull latest code
+            cd /home/ec2-user/microservices-cicd
             git pull origin main
-
-            # Restart all services with existing images
             /usr/local/bin/docker-compose down
             /usr/local/bin/docker-compose up -d --build
-
-            # Verify containers are running
+            sleep 15
             /usr/local/bin/docker-compose ps
+
       - name: Run smoke tests
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -65,55 +53,12 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           timeout: 60s
-          command_timeout: 120s
+          command_timeout: 60s
           script: |
-            echo "Running smoke tests..."
-            sleep 5
-
-            # Test gateway health
             curl -f http://localhost/health || exit 1
             echo "Gateway: OK"
-
-            # Test user service
             curl -f http://localhost/api/users || exit 1
             echo "Users API: OK"
-
-            # Test order service
             curl -f http://localhost/api/orders || exit 1
             echo "Orders API: OK"
-
             echo "All smoke tests passed!"
-
-      - name: Send success email
-        if: success()
-        run: |
-          curl -s --request POST \
-            --url https://api.sendgrid.com/v3/mail/send \
-            --header "Authorization: Bearer ${{ secrets.SENDGRID_API_KEY }}" \
-            --header "Content-Type: application/json" \
-            --data '{
-              "personalizations": [{"to": [{"email": "${{ secrets.NOTIFY_EMAIL }}"}]}],
-              "from": {"email": "${{ secrets.NOTIFY_EMAIL }}"},
-              "subject": "✅ Deployment Successful - microservices-cicd",
-              "content": [{
-                "type": "text/plain",
-                "value": "Deployment succeeded!\n\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nBy: ${{ github.actor }}\n\nLive at: http://${{ secrets.EC2_HOST }}\n\nLogs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-              }]
-            }'
-
-      - name: Send failure email
-        if: failure()
-        run: |
-          curl -s --request POST \
-            --url https://api.sendgrid.com/v3/mail/send \
-            --header "Authorization: Bearer ${{ secrets.SENDGRID_API_KEY }}" \
-            --header "Content-Type: application/json" \
-            --data '{
-              "personalizations": [{"to": [{"email": "${{ secrets.NOTIFY_EMAIL }}"}]}],
-              "from": {"email": "${{ secrets.NOTIFY_EMAIL }}"},
-              "subject": "❌ Deployment FAILED - microservices-cicd",
-              "content": [{
-                "type": "text/plain",
-                "value": "Deployment FAILED!\n\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nBy: ${{ github.actor }}\n\nCheck logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-              }]
-            }'

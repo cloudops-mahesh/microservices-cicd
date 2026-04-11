@@ -47,41 +47,17 @@ jobs:
           timeout: 60s
           command_timeout: 300s
           script: |
-            # Authenticate Docker to ECR
-            aws ecr get-login-password --region ap-south-1 \
-              | docker login --username AWS \
-                             --password-stdin ${{ env.ECR_REGISTRY }}
-
-            # Navigate to project
-            cd /home/ec2-user/microservices-cicd
+           cd /home/ec2-user/microservices-cicd
 
             # Pull latest code
             git pull origin main
 
-            # Set environment variables
-            export ECR_REGISTRY=${{ env.ECR_REGISTRY }}
-            export IMAGE_TAG=${{ steps.vars.outputs.IMAGE_TAG }}
-
-            # Pull latest images from ECR
-            docker pull $ECR_REGISTRY/api-gateway:latest
-            docker pull $ECR_REGISTRY/user-service:latest
-            docker pull $ECR_REGISTRY/order-service:latest
-            docker pull $ECR_REGISTRY/frontend:latest
-
-            # Update docker-compose to use ECR images
-            export ECR_REGISTRY=$ECR_REGISTRY
-            export IMAGE_TAG=latest
-
-            # Restart all services
+            # Restart all services with existing images
             /usr/local/bin/docker-compose down
-            /usr/local/bin/docker-compose up -d
+            /usr/local/bin/docker-compose up -d --build
 
-            # Wait for health checks
-            sleep 20
-
-            # Verify all containers are running
+            # Verify containers are running
             /usr/local/bin/docker-compose ps
-
       - name: Run smoke tests
         uses: appleboy/ssh-action@v1.0.3
         with:

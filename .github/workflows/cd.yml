@@ -44,7 +44,8 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          timeout: 120s
+          timeout: 60s
+          command_timeout: 300s
           script: |
             # Authenticate Docker to ECR
             aws ecr get-login-password --region ap-south-1 \
@@ -87,6 +88,8 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 120s
           script: |
             echo "Running smoke tests..."
             sleep 5

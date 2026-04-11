@@ -41,9 +41,8 @@ jobs:
           script: |
             cd /home/ec2-user/microservices-cicd
             git pull origin main
-            /usr/local/bin/docker-compose down
-            /usr/local/bin/docker-compose up -d --build
-            sleep 15
+            /usr/local/bin/docker-compose restart
+            sleep 10
             /usr/local/bin/docker-compose ps
 
       - name: Run smoke tests

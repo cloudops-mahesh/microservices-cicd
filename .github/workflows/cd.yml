@@ -107,38 +107,34 @@ jobs:
 
       - name: Send success email
         if: success()
-        uses: sendgrid/sendgrid-github-action@v1.0.1
-        with:
-          api_key: ${{ secrets.SENDGRID_API_KEY }}
-          to: ${{ secrets.NOTIFY_EMAIL }}
-          from: ${{ secrets.NOTIFY_EMAIL }}
-          subject: "✅ Deployment Successful - microservices-cicd"
-          body: |
-            Deployment completed successfully!
-
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Triggered by: ${{ github.actor }}
-
-            App is live at: http://${{ secrets.EC2_HOST }}
-
-            View workflow: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -s --request POST \
+            --url https://api.sendgrid.com/v3/mail/send \
+            --header "Authorization: Bearer ${{ secrets.SENDGRID_API_KEY }}" \
+            --header "Content-Type: application/json" \
+            --data '{
+              "personalizations": [{"to": [{"email": "${{ secrets.NOTIFY_EMAIL }}"}]}],
+              "from": {"email": "${{ secrets.NOTIFY_EMAIL }}"},
+              "subject": "✅ Deployment Successful - microservices-cicd",
+              "content": [{
+                "type": "text/plain",
+                "value": "Deployment succeeded!\n\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nBy: ${{ github.actor }}\n\nLive at: http://${{ secrets.EC2_HOST }}\n\nLogs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              }]
+            }'
 
       - name: Send failure email
         if: failure()
-        uses: sendgrid/sendgrid-github-action@v1.0.1
-        with:
-          api_key: ${{ secrets.SENDGRID_API_KEY }}
-          to: ${{ secrets.NOTIFY_EMAIL }}
-          from: ${{ secrets.NOTIFY_EMAIL }}
-          subject: "❌ Deployment FAILED - microservices-cicd"
-          body: |
-            Deployment FAILED!
-
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Triggered by: ${{ github.actor }}
-
-            Check logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -s --request POST \
+            --url https://api.sendgrid.com/v3/mail/send \
+            --header "Authorization: Bearer ${{ secrets.SENDGRID_API_KEY }}" \
+            --header "Content-Type: application/json" \
+            --data '{
+              "personalizations": [{"to": [{"email": "${{ secrets.NOTIFY_EMAIL }}"}]}],
+              "from": {"email": "${{ secrets.NOTIFY_EMAIL }}"},
+              "subject": "❌ Deployment FAILED - microservices-cicd",
+              "content": [{
+                "type": "text/plain",
+                "value": "Deployment FAILED!\n\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nBy: ${{ github.actor }}\n\nCheck logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              }]
+            }'

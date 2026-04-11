@@ -1,0 +1,111 @@
+name: Rollback Pipeline
+
+on:
+  workflow_dispatch:        # Manual trigger only
+    inputs:
+      image_tag:
+        description: 'Image tag to rollback to (git SHA e.g. abc1234)'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for rollback'
+        required: true
+        type: string
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
+
+jobs:
+
+  rollback:
+    name: Rollback to previous version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify images exist in ECR
+        run: |
+          echo "Verifying images with tag: ${{ inputs.image_tag }}"
+          aws ecr describe-images \
+            --repository-name user-service \
+            --image-ids imageTag=${{ inputs.image_tag }} \
+            --region ${{ env.AWS_REGION }} \
+            || (echo "Image tag not found in ECR!" && exit 1)
+          echo "Images verified successfully!"
+
+      - name: Rollback on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 300s
+          script: |
+            echo "Starting rollback to tag: ${{ inputs.image_tag }}"
+            echo "Reason: ${{ inputs.reason }}"
+
+            # Authenticate to ECR
+            aws ecr get-login-password --region ap-south-1 \
+              | docker login --username AWS \
+                             --password-stdin ${{ env.ECR_REGISTRY }}
+
+            # Pull specific version images
+            docker pull ${{ env.ECR_REGISTRY }}/api-gateway:${{ inputs.image_tag }}
+            docker pull ${{ env.ECR_REGISTRY }}/user-service:${{ inputs.image_tag }}
+            docker pull ${{ env.ECR_REGISTRY }}/order-service:${{ inputs.image_tag }}
+            docker pull ${{ env.ECR_REGISTRY }}/frontend:${{ inputs.image_tag }}
+
+            # Tag them as latest
+            docker tag ${{ env.ECR_REGISTRY }}/api-gateway:${{ inputs.image_tag }} \
+                       ${{ env.ECR_REGISTRY }}/api-gateway:latest
+            docker tag ${{ env.ECR_REGISTRY }}/user-service:${{ inputs.image_tag }} \
+                       ${{ env.ECR_REGISTRY }}/user-service:latest
+            docker tag ${{ env.ECR_REGISTRY }}/order-service:${{ inputs.image_tag }} \
+                       ${{ env.ECR_REGISTRY }}/order-service:latest
+            docker tag ${{ env.ECR_REGISTRY }}/frontend:${{ inputs.image_tag }} \
+                       ${{ env.ECR_REGISTRY }}/frontend:latest
+
+            # Restart with rolled back images
+            cd /home/ec2-user/microservices-cicd
+            /usr/local/bin/docker-compose down
+            /usr/local/bin/docker-compose up -d
+            sleep 15
+            /usr/local/bin/docker-compose ps
+
+      - name: Verify rollback
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 60s
+          script: |
+            curl -f http://localhost/health || exit 1
+            echo "Gateway: OK"
+            curl -f http://localhost/api/users || exit 1
+            echo "Users API: OK"
+            curl -f http://localhost/api/orders || exit 1
+            echo "Orders API: OK"
+            echo "Rollback verified successfully!"
+
+      - name: Print rollback summary
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Rollback completed!"
+          echo "Rolled back to tag: ${{ inputs.image_tag }}"
+          echo "Reason: ${{ inputs.reason }}"
+          echo "Triggered by: ${{ github.actor }}"
+          echo "App is live at: http://${{ secrets.EC2_HOST }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

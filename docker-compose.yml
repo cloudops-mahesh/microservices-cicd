@@ -78,6 +78,31 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+  
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - /home/ec2-user/microservices-cicd/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - app-network
+    restart: unless-stopped
+  
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - app-network
+    restart: unless-stopped
 
  
 
@@ -85,3 +110,4 @@ networks:
   app-network:
     driver: bridge
     name: microservices-net
+
